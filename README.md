@@ -1,3 +1,5 @@
+( Required Python v3.10+ and Pip version v23.0.1 )
+
 # Inventory Planning Dashboard
 
 A fully automated Streamlit dashboard for dynamic safety stock calculation and 90-day inventory simulation.
