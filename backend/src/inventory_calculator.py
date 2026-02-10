@@ -480,7 +480,7 @@ class InventorySimulator:
         
         return df_daily
     
-    def simulate_multiple_skus(self,
+    def simulate_sku(self,
                      sku_id: str,
                      avg_daily_demand: float,
                      safety_stock: float,

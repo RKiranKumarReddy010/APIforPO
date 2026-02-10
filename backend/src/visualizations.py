@@ -41,7 +41,11 @@ class InventoryVisualizer:
                 color=df_top['cv_demand'],
                 colorscale='RdYlGn_r',
                 showscale=True,
-                colorbar=dict(title="CV")
+                colorbar=dict(
+                    title="CV",
+                    x=1.15, # Move colorbar further right
+                    thickness=15
+                )
             ),
             text=df_top['avg_daily_demand'].round(1),
             textposition='outside',
@@ -51,12 +55,13 @@ class InventoryVisualizer:
         ))
         
         fig.update_layout(
-            title=f"Top {top_n} Keys by Average Daily Demand",
+            title=None, # Remove redundant title
             xaxis_title="Average Daily Demand (Units)",
-            yaxis_title="Key",
+            yaxis_title=None,
             height=max(400, top_n * 25),
             showlegend=False,
-            template='plotly_white'
+            template='plotly_white',
+            margin=dict(l=160, r=120, t=20, b=60), # Large left for SKUs, large right for colorbar
         )
         
         return fig
@@ -382,12 +387,17 @@ class InventoryVisualizer:
         ))
         
         # Add vertical lines for interpretation
-        fig.add_vline(x=0.25, line_dash="dash", line_color="green", 
-                     annotation_text="Low variability", annotation_position="top")
-        fig.add_vline(x=0.5, line_dash="dash", line_color="orange",
-                     annotation_text="Moderate", annotation_position="top")
-        fig.add_vline(x=0.75, line_dash="dash", line_color="red",
-                     annotation_text="High variability", annotation_position="top")
+        fig.add_vline(x=0.25, line_dash="dash", line_color="rgba(34, 197, 94, 0.5)")
+        fig.add_vline(x=0.5, line_dash="dash", line_color="rgba(249, 115, 22, 0.5)")
+        fig.add_vline(x=0.75, line_dash="dash", line_color="rgba(239, 68, 68, 0.5)")
+
+        # Use absolute annotations to guarantee zero overlap through vertical staggering
+        fig.add_annotation(x=0.25, y=1.05, yref="paper", text="Low Variability", 
+                          showarrow=False, font=dict(color="green", size=10), yanchor="bottom")
+        fig.add_annotation(x=0.5, y=1.15, yref="paper", text="Moderate", 
+                          showarrow=False, font=dict(color="orange", size=10), yanchor="bottom")
+        fig.add_annotation(x=0.75, y=1.05, yref="paper", text="High Variability", 
+                          showarrow=False, font=dict(color="red", size=10), yanchor="bottom")
         
         fig.update_layout(
             title="Coefficient of Variation Distribution",

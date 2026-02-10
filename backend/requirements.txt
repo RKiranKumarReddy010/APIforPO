@@ -1,0 +1,29 @@
+# Python Dependencies for Inventory Planning Dashboard
+
+# Core Data Processing
+pandas>=2.0.0
+numpy>=1.24.0
+
+# Scientific Computing
+scipy>=1.10.0
+
+# Visualization
+plotly>=5.14.0
+
+# Streamlit Dashboard
+streamlit>=1.28.0
+
+# Date/Time Handling (included with pandas)
+python-dateutil>=2.8.0
+
+# Excel Support
+openpyxl>=3.1.0
+xlrd>=2.0.0
+
+# Type Hints (Python 3.8+)
+typing-extensions>=4.5.0
+
+# Flask Backend Server
+flask>=2.3.0
+flask-cors>=4.0.0
+werkzeug>=2.3.0
