@@ -11,7 +11,7 @@ const PrimaryDataTab = ({ uploadData, processedData, charts, safetyStockData }) 
         if (!uploadData?.filepath) return;
         setIsExporting(true);
         try {
-            const response = await fetch('http://localhost:5000/api/export-to-nowcast', {
+            const response = await fetch('http://20.44.56.229:5050/api/export-to-nowcast', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ filepath: uploadData.filepath })
@@ -232,8 +232,8 @@ const PrimaryDataTab = ({ uploadData, processedData, charts, safetyStockData }) 
                             onClick={handleExportNowcast}
                             disabled={isExporting}
                             className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-black text-sm transition-all shadow-lg active:scale-95 ${isExporting
-                                    ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                                    : 'bg-blue-600 text-white hover:bg-blue-700 hover:shadow-blue-200 shadow-blue-100'
+                                ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                                : 'bg-blue-600 text-white hover:bg-blue-700 hover:shadow-blue-200 shadow-blue-100'
                                 }`}
                         >
                             {isExporting ? (

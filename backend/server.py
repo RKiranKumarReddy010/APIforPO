@@ -737,6 +737,11 @@ def batch_calculate():
             'timestamp': datetime.now().isoformat()
         }), 200
 
+    except Exception as e:
+        app.logger.error(f"Internal Error: {str(e)}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/export-to-nowcast', methods=['POST'])
 def export_to_nowcast():
     """
