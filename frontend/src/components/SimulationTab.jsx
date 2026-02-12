@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Play, Loader, CheckCircle, AlertCircle, TrendingUp, Package, Calendar, Database, Zap, ArrowRight, Table } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Play, Loader, CheckCircle, AlertCircle, TrendingUp, Package, Calendar, Database, Zap, ArrowRight, Table, Filter, X } from 'lucide-react';
 import Plot from 'react-plotly.js';
 import { simulateInventory } from '../api';
 
@@ -32,6 +32,55 @@ const SimulationTab = ({ uploadData, safetyStockData, onSimulate }) => {
             setInitialInventory(Math.ceil(skuData.demand_mean * 30));
         }
     };
+
+    // Filter Logic
+    const [filters, setFilters] = useState({
+        chain: 'All',
+        category: 'All',
+        dtCode: 'All'
+    });
+
+    const uniqueChains = useMemo(() => {
+        const relevant = validSkus.filter(s =>
+            (filters.category === 'All' || s.Category === filters.category) &&
+            (filters.dtCode === 'All' || s.DT_Code === filters.dtCode)
+        );
+        return ['All', ...new Set(relevant.map(s => s.Chain || 'Unknown').filter(Boolean))].sort();
+    }, [validSkus, filters.category, filters.dtCode]);
+
+    const uniqueCategories = useMemo(() => {
+        const relevant = validSkus.filter(s =>
+            (filters.chain === 'All' || s.Chain === filters.chain) &&
+            (filters.dtCode === 'All' || s.DT_Code === filters.dtCode)
+        );
+        return ['All', ...new Set(relevant.map(s => s.Category || 'Unknown').filter(Boolean))].sort();
+    }, [validSkus, filters.chain, filters.dtCode]);
+
+    const uniqueDtCodes = useMemo(() => {
+        const relevant = validSkus.filter(s =>
+            (filters.chain === 'All' || s.Chain === filters.chain) &&
+            (filters.category === 'All' || s.Category === filters.category)
+        );
+        return ['All', ...new Set(relevant.map(s => s.DT_Code || 'Unknown').filter(Boolean))].sort();
+    }, [validSkus, filters.chain, filters.category]);
+
+    const filteredSkus = useMemo(() => {
+        return validSkus.filter(sku => {
+            return (filters.chain === 'All' || sku.Chain === filters.chain) &&
+                (filters.category === 'All' || sku.Category === filters.category) &&
+                (filters.dtCode === 'All' || sku.DT_Code === filters.dtCode);
+        });
+    }, [validSkus, filters]);
+
+    const clearFilters = () => setFilters({ chain: 'All', category: 'All', dtCode: 'All' });
+
+    // Update selection when filtered list changes
+    useEffect(() => {
+        if (filteredSkus.length > 0 && !filteredSkus.some(s => s.sku_id === selectedSku)) {
+            setSelectedSku(filteredSkus[0].sku_id);
+            setInitialInventory(Math.ceil(filteredSkus[0].demand_mean * 30));
+        }
+    }, [filteredSkus, selectedSku]);
 
     const handleRunSimulation = async () => {
         if (!uploadData?.filepath) {
@@ -152,6 +201,50 @@ const SimulationTab = ({ uploadData, safetyStockData, onSimulate }) => {
             {/* Control Panel */}
             <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
                 <div className="lg:col-span-3 premium-card p-8">
+
+                    {/* Filters Toolbar */}
+                    <div className="flex flex-wrap items-center gap-4 mb-6 pb-6 border-b border-slate-100">
+                        <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-wider mr-2">
+                            <Filter size={14} /> Filters:
+                        </div>
+
+                        <select
+                            className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-lg p-2 font-medium focus:ring-2 focus:ring-indigo-100 outline-none"
+                            value={filters.chain}
+                            onChange={(e) => setFilters(prev => ({ ...prev, chain: e.target.value }))}
+                        >
+                            <option value="All">All Chains</option>
+                            {uniqueChains.filter(c => c !== 'All').map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+
+                        <select
+                            className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-lg p-2 font-medium focus:ring-2 focus:ring-indigo-100 outline-none"
+                            value={filters.category}
+                            onChange={(e) => setFilters(prev => ({ ...prev, category: e.target.value }))}
+                        >
+                            <option value="All">All Categories</option>
+                            {uniqueCategories.filter(c => c !== 'All').map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+
+                        <select
+                            className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-lg p-2 font-medium focus:ring-2 focus:ring-indigo-100 outline-none"
+                            value={filters.dtCode}
+                            onChange={(e) => setFilters(prev => ({ ...prev, dtCode: e.target.value }))}
+                        >
+                            <option value="All">All DT Codes</option>
+                            {uniqueDtCodes.filter(c => c !== 'All').map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+
+                        {(filters.chain !== 'All' || filters.category !== 'All' || filters.dtCode !== 'All') && (
+                            <button
+                                onClick={clearFilters}
+                                className="flex items-center gap-1 text-xs font-bold text-rose-500 hover:text-rose-600 bg-rose-50 hover:bg-rose-100 px-3 py-2 rounded-lg transition-colors ml-auto"
+                            >
+                                <X size={14} /> Clear Filters
+                            </button>
+                        )}
+                    </div>
+
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                         <div>
                             <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Target Asset (SKU)</label>
@@ -162,7 +255,7 @@ const SimulationTab = ({ uploadData, safetyStockData, onSimulate }) => {
                                     value={selectedSku}
                                     onChange={handleSkuChange}
                                 >
-                                    {validSkus.map(sku => (
+                                    {filteredSkus.map(sku => (
                                         <option key={sku.sku_id} value={sku.sku_id}>{sku.sku_id}</option>
                                     ))}
                                 </select>

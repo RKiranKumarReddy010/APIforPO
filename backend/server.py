@@ -316,6 +316,40 @@ def get_charts():
         # Create visualizer
         viz = InventoryVisualizer()
 
+        # Calculate default SS/ROP for immediate display
+        ss_calc = SafetyStockCalculator(service_level=0.95)
+        rop_calc = ReorderPointCalculator()
+        
+        default_ss = []
+        default_rop = []
+        current_stock = []
+        
+        for _, row in df_sku_stats.iterrows():
+            try:
+                mean = row.get('avg_daily_demand', 0)
+                std = row.get('std_dev_demand', 0)
+                
+                ss = ss_calc.calculate_safety_stock(mean, std, lead_time_days=7)
+                rop = rop_calc.calculate_reorder_point(mean, ss, lead_time_days=7)
+                
+                default_ss.append(ss)
+                default_rop.append(rop)
+                
+                # Mock Current Stock for Alerts Demo (since real stock column isn't standardized yet)
+                # Create a distribution: some critical (<50% ROP), some warning (50-100%), some healthy (>100%)
+                # We use random factors to simulate this variance for the UI demonstration
+                stock_factor = np.random.uniform(0.1, 2.5) 
+                sim_stock = rop * stock_factor
+                current_stock.append(int(sim_stock))
+            except:
+                default_ss.append(0)
+                default_rop.append(0)
+                current_stock.append(0)
+                
+        df_sku_stats['safety_stock'] = default_ss
+        df_sku_stats['reorder_point'] = default_rop
+        df_sku_stats['current_stock'] = current_stock
+
         # Generate charts
         fig_demand = viz.plot_demand_distribution(df_sku_stats, top_n=20)
         fig_cv = viz.plot_cv_distribution(df_sku_stats)
@@ -326,7 +360,8 @@ def get_charts():
             'demand_distribution': fig_demand.to_json(),
             'cv_distribution': fig_cv.to_json(),
             'offtake_trends': fig_trends.to_json(),
-            'sku_stats': df_sku_stats.head(50).to_dict('records')
+            'sku_stats': df_sku_stats.head(2000).to_dict('records'),
+            'monthly_data': df_monthly.to_dict('records') # Send full monthly data for client-side filtering
         }
 
         return jsonify({
@@ -679,7 +714,11 @@ def batch_calculate():
                     'demand_mean': float(demand_mean),
                     'demand_std': float(demand_std),
                     'cv_demand': float(cv),
-                    'service_level': float(service_level)
+                    'service_level': float(service_level),
+                    'Chain': str(sku_data['Chain'].iloc[0]) if 'Chain' in sku_data.columns else 'Unknown',
+                    'Category': str(sku_data['L1 Prod Category'].iloc[0]) if 'L1 Prod Category' in sku_data.columns else 'Unknown',
+                    'DT_Code': str(sku_data['DT Code'].iloc[0]) if 'DT Code' in sku_data.columns else 'Unknown',
+                    'Brand': str(sku_data['Brand_Name'].iloc[0]) if 'Brand_Name' in sku_data.columns else 'Unknown'
                 })
 
             except Exception as e:
@@ -698,9 +737,145 @@ def batch_calculate():
             'timestamp': datetime.now().isoformat()
         }), 200
 
+@app.route('/api/export-to-nowcast', methods=['POST'])
+def export_to_nowcast():
+    """
+    Export alerts to Nowcast AI application
+    Expected JSON: {'filepath': 'path/to/file.csv'}
+    """
+    try:
+        data = request.get_json()
+        filepath = data.get('filepath')
+
+        if not filepath or not os.path.exists(filepath):
+            return jsonify({'error': 'File not found'}), 404
+
+        # 1. Read and process data
+        if filepath.endswith('.csv'):
+            df = pd.read_csv(filepath)
+        else:
+            df = pd.read_excel(filepath)
+
+        processor = DataProcessor(df)
+        processor.process_all()
+        processor.aggregate_to_monthly()
+        processor.aggregate_to_weekly()
+        df_sku_stats = processor.calculate_sku_statistics()
+
+        # 2. Add SS, ROP and Simulated Stock (using same logic as get_charts)
+        ss_calc = SafetyStockCalculator(service_level=0.975)
+        rop_calc = ReorderPointCalculator()
+        
+        default_ss = []
+        default_rop = []
+        current_stock = []
+        
+        for _, row in df_sku_stats.iterrows():
+            try:
+                mean = row.get('avg_daily_demand', 0)
+                std = row.get('std_dev_demand', 0)
+                ss = ss_calc.calculate_safety_stock(mean, std, lead_time_days=7)
+                rop = rop_calc.calculate_reorder_point(mean, ss, lead_time_days=7)
+                
+                # Use a deterministic/seeded factor or reasonable mock for export
+                # Here we use a hash of the key to keep it consistent if re-run
+                import hashlib
+                h = int(hashlib.md5(str(row['key']).encode()).hexdigest(), 16)
+                stock_factor = (h % 200) / 100.0 # 0.0 to 2.0
+                
+                sim_stock = rop * stock_factor
+                
+                default_ss.append(ss)
+                default_rop.append(rop)
+                current_stock.append(int(sim_stock))
+            except:
+                default_ss.append(0)
+                default_rop.append(0)
+                current_stock.append(0)
+                
+        df_sku_stats['safety_stock'] = default_ss
+        df_sku_stats['reorder_point'] = default_rop
+        df_sku_stats['current_stock'] = current_stock
+
+        # 3. Aggregate for Map (Group by State)
+        map_data = []
+        oos_alerts = []
+        over_alerts = []
+        
+        if 'State' in df_sku_stats.columns:
+            # Generate Alert lists first
+            # OOS: stock < ROP
+            oos_df = df_sku_stats[df_sku_stats['current_stock'] < df_sku_stats['reorder_point']].copy()
+            oos_df['doh'] = (oos_df['current_stock'] / oos_df['avg_daily_demand'].replace(0, 1)).fillna(0)
+            
+            for _, row in oos_df.sort_values('doh').head(20).iterrows():
+                oos_alerts.append({
+                    "state": str(row.get('State', 'NA')),
+                    "item": str(row['key']),
+                    "currentStock": int(row['current_stock']),
+                    "weeksOnHand": round(float(row['doh'] / 7.0), 2)
+                })
+
+            # Over Inventory: stock > 2 * ROP (mock criteria)
+            over_df = df_sku_stats[df_sku_stats['current_stock'] > df_sku_stats['reorder_point'] * 1.5].copy()
+            over_df['doh'] = (over_df['current_stock'] / over_df['avg_daily_demand'].replace(0, 1)).fillna(0)
+            
+            for _, row in over_df.sort_values('doh', ascending=False).head(20).iterrows():
+                over_alerts.append({
+                    "state": str(row.get('State', 'NA')),
+                    "item": str(row['key']),
+                    "currentStock": int(row['current_stock']),
+                    "weeksOnHand": round(float(row['doh'] / 7.0), 2)
+                })
+
+            for state, group in df_sku_stats.groupby('State'):
+                if not state or state == 'Unknown' or str(state).lower() == 'nan':
+                    continue
+                
+                # Define alerts: Stockout risk if current_stock < reorder_point
+                alerts_df = group[group['current_stock'] < group['reorder_point']].copy()
+                
+                # Sort alerts by severity (lowest stock relative to ROP)
+                alerts_df['severity'] = (alerts_df['current_stock'] / alerts_df['reorder_point']).fillna(0)
+                alerts_df = alerts_df.sort_values('severity')
+                
+                state_entry = {
+                    "State": str(state),
+                    "Total_Alerts": int(len(alerts_df)),
+                    "Item": alerts_df['key'].head(10).tolist(),
+                    "Days_on_Hand": [round(float(s), 1) for s in (alerts_df['current_stock'] / alerts_df['avg_daily_demand'].replace(0, 1)).head(10).tolist()],
+                    "Inventory_Alert": ["CRITICAL" if s < 0.5 else "WARNING" for s in alerts_df['severity'].head(10).tolist()]
+                }
+                map_data.append(state_entry)
+
+        # 4. Write to Nowcast AI project directory
+        export_payload = {
+            "record": map_data,
+            "oos_alerts": oos_alerts,
+            "over_alerts": over_alerts
+        }
+
+        nowcast_path = r"c:\Users\Acer\Downloads\myTask\NowcastAI\src\jsons\supplychaintower\map_data.json"
+        
+        try:
+            import json
+            os.makedirs(os.path.dirname(nowcast_path), exist_ok=True)
+            with open(nowcast_path, 'w') as f:
+                json.dump(export_payload, f, indent=2)
+            export_status = f"Saved to Nowcast AI at {nowcast_path}"
+        except Exception as write_error:
+            export_status = f"Error writing file: {str(write_error)}"
+
+        return jsonify({
+            'success': True,
+            'message': export_status,
+            'export_data': clean_for_json(export_payload)
+        }), 200
+
     except Exception as e:
-        app.logger.error(f"Internal Error: {str(e)}", exc_info=True)
+        app.logger.error(f"Export error: {str(e)}", exc_info=True)
         return jsonify({'error': str(e)}), 500
+
 # ERROR HANDLERS
 # ============================================================================
 

@@ -232,6 +232,33 @@ class DataProcessor:
             # Sigma_Demand = RMSE scaled from monthly variance (primary metric for safety stock)
             stats['sigma_demand'] = sigma_demand
             
+            # Sigma_Demand = RMSE scaled from monthly variance (primary metric for safety stock)
+            stats['sigma_demand'] = sigma_demand
+            
+            # Add categorical attributes (Chain, DT Code, Category)
+            # Fetch from original clean dataframe (assuming constant per SKU)
+            if self.df_clean is not None:
+                key_mask = self.df_clean['key'] == key_id
+                if key_mask.any():
+                    first_row = self.df_clean.loc[key_mask].iloc[0]
+                    category = str(first_row.get('L1 Prod Category', 'Unknown'))
+                    dt_code = first_row.get('DT Code', 'Unknown')
+                    
+                    # Handle float/int conversion for DT Code to avoid '101.0'
+                    try:
+                        if isinstance(dt_code, float) and dt_code.is_integer():
+                            dt_code = int(dt_code)
+                        stats['DT_Code'] = str(dt_code)
+                    except:
+                        stats['DT_Code'] = str(dt_code)
+
+                    stats['Chain'] = str(first_row.get('Chain', 'Unknown'))
+                    stats['Category'] = category
+                    stats['Brand'] = str(first_row.get('Brand_Name', 'Unknown'))
+                    stats['State'] = str(first_row.get('State', 'Unknown'))
+                    stats['City'] = str(first_row.get('Final City', 'Unknown'))
+                    stats['Region'] = str(first_row.get('Region', 'Unknown'))
+            
             stats_list.append(stats)
             
         self.df_sku_stats = pd.DataFrame(stats_list)
